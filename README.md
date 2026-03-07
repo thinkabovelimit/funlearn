@@ -1,17 +1,43 @@
-# topic_guesser
+# Topic Guesser (Flutter + FastAPI)
 
-A new Flutter project.
+Reverse quiz app powered by a dataset-backed FastAPI service.
 
-## Getting Started
+## 1. Configure API URL for Flutter
 
-This project is a starting point for a Flutter application.
+Update `.env` (for local Chrome run):
 
-A few resources to get you started if this is your first Flutter project:
+```env
+API_BASE_URL=http://127.0.0.1:8000
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## 2. Start FastAPI
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+From project root:
+
+```bash
+cd funlearn
+python3 -m pip install -r requirements.txt
+uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Quick check:
+
+```bash
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/topics
+```
+
+## 3. Run Flutter on Chrome
+
+In a new terminal:
+
+```bash
+cd funlearn
+flutter pub get
+flutter run -d chrome
+```
+
+## Notes
+
+- Keep FastAPI running while using the Flutter app.
+- If you change `.env`, do a full app restart (not just hot reload).
