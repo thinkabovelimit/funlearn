@@ -1,4 +1,4 @@
-# Topic Guesser (Flutter + FastAPI)
+# BrainBounce (Flutter + FastAPI)
 
 Reverse quiz app powered by a dataset-backed FastAPI service.
 

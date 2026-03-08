@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -11,16 +12,16 @@ Future<void> main() async {
   } catch (_) {
     // Fallback URL will be used if .env is not present.
   }
-  runApp(const TopicGuesserApp());
+  runApp(const BrainBounceApp());
 }
 
-class TopicGuesserApp extends StatelessWidget {
-  const TopicGuesserApp({super.key});
+class BrainBounceApp extends StatelessWidget {
+  const BrainBounceApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Topic Guesser',
+      title: 'BrainBounce',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -36,16 +37,19 @@ class TopicGuesserApp extends StatelessWidget {
 
 class ApiClient {
   ApiClient({http.Client? client}) : _client = client ?? http.Client();
-
   static String get baseUrl =>
-      dotenv.maybeGet('API_BASE_URL') ?? 'http://10.0.2.2:8000';
+      dotenv.maybeGet('API_BASE_URL') ?? 'https://funlearn-7w7z.onrender.com';
   final http.Client _client;
 
   Future<List<String>> fetchTopics() async {
     final Uri uri = Uri.parse('$baseUrl/topics');
-    final http.Response response = await _client.get(uri);
+    final http.Response response = await _client.get(uri).timeout(
+      const Duration(seconds: 20),
+    );
     if (response.statusCode != 200) {
-      throw Exception('Failed to fetch topics');
+      throw Exception(
+        'GET $uri failed (${response.statusCode}): ${response.body}',
+      );
     }
 
     final Map<String, dynamic> jsonBody =
@@ -58,9 +62,13 @@ class ApiClient {
     final Uri uri = Uri.parse('$baseUrl/quiz/question')
         .replace(queryParameters: <String, String>{'topic': topic});
 
-    final http.Response response = await _client.get(uri);
+    final http.Response response = await _client.get(uri).timeout(
+      const Duration(seconds: 20),
+    );
     if (response.statusCode != 200) {
-      throw Exception('Failed to fetch question');
+      throw Exception(
+        'GET $uri failed (${response.statusCode}): ${response.body}',
+      );
     }
 
     final Map<String, dynamic> jsonBody =
@@ -79,9 +87,13 @@ class ApiClient {
       },
     );
 
-    final http.Response response = await _client.get(uri);
+    final http.Response response = await _client.get(uri).timeout(
+      const Duration(seconds: 20),
+    );
     if (response.statusCode != 200) {
-      throw Exception('Failed to fetch hint');
+      throw Exception(
+        'GET $uri failed (${response.statusCode}): ${response.body}',
+      );
     }
 
     final Map<String, dynamic> jsonBody =
@@ -94,19 +106,55 @@ class ApiClient {
     required String guess,
   }) async {
     final Uri uri = Uri.parse('$baseUrl/quiz/submit');
-    final http.Response response = await _client.post(
+    final http.Response response = await _client
+        .post(
       uri,
       headers: <String, String>{'Content-Type': 'application/json'},
       body: jsonEncode(<String, dynamic>{'item_id': itemId, 'guess': guess}),
-    );
+    )
+        .timeout(const Duration(seconds: 20));
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to submit guess');
+      throw Exception(
+        'POST $uri failed (${response.statusCode}): ${response.body}',
+      );
     }
 
     final Map<String, dynamic> jsonBody =
         jsonDecode(response.body) as Map<String, dynamic>;
     return SubmitResponse.fromJson(jsonBody);
+  }
+
+  Future<List<String>> searchAnswers({
+    required String query,
+    String? topic,
+    int limit = 10,
+  }) async {
+    final Map<String, String> params = <String, String>{
+      'query': query,
+      'limit': '$limit',
+    };
+    if (topic != null && topic.isNotEmpty) {
+      params['topic'] = topic;
+    }
+
+    final Uri uri = Uri.parse('$baseUrl/answers/search').replace(
+      queryParameters: params,
+    );
+    final http.Response response = await _client.get(uri).timeout(
+      const Duration(seconds: 20),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'GET $uri failed (${response.statusCode}): ${response.body}',
+      );
+    }
+
+    final Map<String, dynamic> jsonBody =
+        jsonDecode(response.body) as Map<String, dynamic>;
+    final List<dynamic> options = jsonBody['options'] as List<dynamic>;
+    return options.map((dynamic value) => value.toString()).toList();
   }
 }
 
@@ -202,13 +250,13 @@ class _TopicSelectionScreenState extends State<TopicSelectionScreen> {
         _isLoading = false;
         _error = null;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) {
         return;
       }
       setState(() {
         _isLoading = false;
-        _error = 'Could not connect to API. Start FastAPI on port 8000.';
+        _error = 'API error on ${ApiClient.baseUrl}: $e';
       });
     }
   }
@@ -233,7 +281,7 @@ class _TopicSelectionScreenState extends State<TopicSelectionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  'Topic Guesser',
+                  'BrainBounce',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: const Color(0xFF0F3D3A),
@@ -241,7 +289,7 @@ class _TopicSelectionScreenState extends State<TopicSelectionScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Topics and answers come from API dataset.',
+                  'Choose your topic.',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: const Color(0xFF375A57),
                       ),
@@ -301,8 +349,8 @@ class _TopicSelectionScreenState extends State<TopicSelectionScreen> {
                     ),
                     onPressed: _selectedTopic == null || _isLoading || _error != null
                         ? null
-                        : () {
-                            Navigator.push(
+                        : () async {
+                            await Navigator.push(
                               context,
                               MaterialPageRoute<void>(
                                 builder: (_) => QuizScreen(
@@ -311,6 +359,12 @@ class _TopicSelectionScreenState extends State<TopicSelectionScreen> {
                                 ),
                               ),
                             );
+                            if (!mounted) {
+                              return;
+                            }
+                            setState(() {
+                              _selectedTopic = null;
+                            });
                           },
                     icon: const Icon(Icons.play_circle_outline),
                     label: const Text(
@@ -346,12 +400,14 @@ class _QuizScreenState extends State<QuizScreen> {
   static const int _maxHints = 5;
 
   final TextEditingController _answerController = TextEditingController();
+  Timer? _searchDebounce;
 
   int? _itemId;
   int _hintIndex = 0;
   int _totalHints = 0;
   bool _loading = true;
   String _feedback = 'Enter your guess first. Hints unlock when wrong.';
+  List<String> _suggestions = <String>[];
 
   @override
   void initState() {
@@ -361,6 +417,7 @@ class _QuizScreenState extends State<QuizScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _answerController.dispose();
     super.dispose();
   }
@@ -371,6 +428,7 @@ class _QuizScreenState extends State<QuizScreen> {
       _hintIndex = 0;
       _feedback = 'Enter your guess first. Hints unlock when wrong.';
       _answerController.clear();
+      _suggestions = <String>[];
     });
 
     try {
@@ -411,6 +469,7 @@ class _QuizScreenState extends State<QuizScreen> {
 
     setState(() {
       _loading = true;
+      _suggestions = <String>[];
     });
 
     try {
@@ -500,6 +559,41 @@ class _QuizScreenState extends State<QuizScreen> {
     }
   }
 
+  void _onGuessChanged(String value) {
+    _searchDebounce?.cancel();
+
+    final String query = value.trim();
+    if (query.isEmpty) {
+      setState(() {
+        _suggestions = <String>[];
+      });
+      return;
+    }
+
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () async {
+      try {
+        final List<String> results = await widget.apiClient.searchAnswers(
+          query: query,
+          topic: widget.topic,
+          limit: 8,
+        );
+        if (!mounted || _answerController.text.trim() != query) {
+          return;
+        }
+        setState(() {
+          _suggestions = results;
+        });
+      } catch (_) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _suggestions = <String>[];
+        });
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -572,8 +666,42 @@ class _QuizScreenState extends State<QuizScreen> {
                           ),
                         ),
                         textInputAction: TextInputAction.done,
+                        onChanged: _onGuessChanged,
                         onSubmitted: (_) => _submitGuess(),
                       ),
+                      if (_suggestions.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          constraints: const BoxConstraints(maxHeight: 180),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0x26000000)),
+                          ),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: _suggestions.length,
+                            itemBuilder: (BuildContext context, int index) {
+                              final String option = _suggestions[index];
+                              return ListTile(
+                                dense: true,
+                                title: Text(option),
+                                onTap: () {
+                                  _answerController.text = option;
+                                  _answerController.selection =
+                                      TextSelection.fromPosition(
+                                    TextPosition(offset: option.length),
+                                  );
+                                  setState(() {
+                                    _suggestions = <String>[];
+                                  });
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                       const Spacer(),
                       SizedBox(
                         width: double.infinity,

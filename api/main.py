@@ -58,6 +58,12 @@ class SubmitResponse(BaseModel):
     fun_fact: str
 
 
+class AnswerSearchResponse(BaseModel):
+    topic: str | None
+    query: str
+    options: list[str]
+
+
 def _normalize(text: str) -> str:
     return " ".join(text.casefold().split())
 
@@ -101,6 +107,42 @@ def get_topic_answers(topic: str) -> TopicAnswersResponse:
     if not filtered:
         raise HTTPException(status_code=404, detail="Topic not found")
     return TopicAnswersResponse(topic=topic, answers=filtered)
+
+
+@app.get("/answers/search", response_model=AnswerSearchResponse)
+def search_answers(
+    query: str = Query(..., min_length=1),
+    topic: str | None = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=50),
+) -> AnswerSearchResponse:
+    query_norm = _normalize(query)
+
+    if topic is None:
+        pool = ITEMS
+    else:
+        pool = [item for item in ITEMS if item.topic == topic]
+        if not pool:
+            raise HTTPException(status_code=404, detail="Topic not found")
+
+    ranked: list[tuple[int, str]] = []
+    seen: set[str] = set()
+    for item in pool:
+        answer = item.answer
+        answer_norm = _normalize(answer)
+        if answer_norm in seen:
+            continue
+        if answer_norm.startswith(query_norm):
+            score = 0
+        elif query_norm in answer_norm:
+            score = 1
+        else:
+            continue
+        seen.add(answer_norm)
+        ranked.append((score, answer))
+
+    ranked.sort(key=lambda x: (x[0], x[1].casefold()))
+    options = [answer for _, answer in ranked[:limit]]
+    return AnswerSearchResponse(topic=topic, query=query, options=options)
 
 
 @app.get("/quiz/question", response_model=QuestionResponse)
